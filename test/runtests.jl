@@ -1,4 +1,4 @@
-using EliminationGraphs, LightGraphs, Test
+using ChordalGraphs, LightGraphs, Test
 
 house_graph = smallgraph("house")
 bull_graph = smallgraph("bull")

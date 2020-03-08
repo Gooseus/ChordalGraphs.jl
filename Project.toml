@@ -1,4 +1,4 @@
-name = "EliminationGraphs"
+name = "ChordalGraphs"
 uuid = "aae625c2-d344-41c0-802f-85692eeb1d11"
 authors = ["Gooseus <shawngmarincas@gmail.com>"]
 version = "0.1.0"

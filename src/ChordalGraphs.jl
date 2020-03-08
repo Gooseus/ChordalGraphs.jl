@@ -1,4 +1,4 @@
-module EliminationGraphs
+module ChordalGraphs
 
 #greet() = print("Hello World!")
 export mcs, mcs_m, lex_m, is_chordal
