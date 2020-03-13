@@ -1,12 +1,14 @@
 module ChordalGraphs
 
-#greet() = print("Hello World!")
 export mcs, mcs_m, lex_m, is_chordal
 
 using LightGraphs
 using MetaGraphs
 
+# TODO - create Label type into a custom type?
+
 # multiple dispatch for comparison operators to work with our label vectors
+# Checks if a Label vector is less than another
 function Base.:<(a::Vector{Int},b::Vector{Int})
     j = length(a)
     k = length(b)
@@ -18,10 +20,12 @@ function Base.:<(a::Vector{Int},b::Vector{Int})
     return j < k
 end
 
+# Checks if a Label vector is greater than another
 function Base.:>(a::Vector{Int},b::Vector{Int})
     b < a
 end
 
+# Checks if a Label vector equal to another
 function Base.:(==)(a::Vector{Int},b::Vector{Int})
     j = length(a)
     k = length(b)
@@ -60,7 +64,7 @@ function has_valid_path(g::MetaGraph, u::Integer, v::Integer, w::Integer)
 end
 
 # multiple dispatch for finding valid path with lexicographic labels (LEX-M)
-# TODO - generalize this shit, more DRY
+# TODO - generalize these more
 function has_valid_path(g::MetaGraph, u::Integer, v::Integer, L::Vector)
     u == v && return true # cannot be separated
 
@@ -96,6 +100,7 @@ function make_clique!(g::SimpleGraph, vs::AbstractArray)
     end
 end
 
+# TODO - can probably combine these two clique functions
 function fill_clique!(f:: SimpleGraph, g::SimpleGraph, vs::AbstractArray)
     for i in vs
         for v in vs
@@ -109,15 +114,18 @@ end
 # Input: A general graph G and an elimination ordering α of the vertices in G
 # Output: Fill graph F such that F ∪ E(G) = G_{α}^{+), the triangulation of G
 # if E(F) is empty then G is a chordal graph
-function elimination_fill(G::SimpleGraph,α::AbstractArray)
-    F = SimpleGraph(nv(G))
+function elimination_fill(G::AbstractGraph,α::AbstractArray)
+    len = nv(G)
+    F = SimpleGraph(len)
     tmp = union(G,SimpleGraph(0))
+    seen = zeros(Bool,len)
+    E = edges(G)
 
     for v in α
         N = neighbors(tmp,v)
         fill_clique!(F,tmp,N)
         make_clique!(tmp,N)
-        rem_vertex!(tmp,v)
+        seen[v] = true
     end
 
     return F
@@ -151,7 +159,45 @@ end
 # Maximum Cardinality Search (MCS) [Berry, et al, 2004]
 # Input: A graph G
 # Output: An elimination ordering α of G
-function mcs(G::SimpleGraph)
+function mcs_faster(G::AbstractGraph)
+    # for all vertices in G do w(v) = 0
+    n = nv(G)
+    weights = zeros(Int,n)
+    α = zeros(Int,n)
+    un = collect(vertices(G))
+    αlist = []
+
+    z = pop!(un)
+    for i in n:-1:1
+        α[z] = i
+        pushfirst!(αlist,z)
+        isempty(un) && break
+
+        for n ∈ neighbors(G,z)
+            if α[n] == 0
+                weights[n] += 1
+            end
+        end
+
+        zw = -Inf
+        k = 1
+        for (j,v) in enumerate(un)
+            if weights[v] >= zw
+                z = v
+                k = j
+                zw = weights[v]
+            end
+        end
+
+        un = deleteat!(un,k)
+    end
+
+    println("numbering: ", αlist)
+
+    return (αlist,elimination_fill(G,αlist))
+end
+
+function mcs(G::SimpleGraph, fill::Bool=false)
     M = MetaGraph(G)
     V = vertices(M)
 
@@ -199,13 +245,14 @@ function mcs(G::SimpleGraph)
     end
 
     # return elimination ordering
-    return (α, elimination_fill(G,α))
+    fill && return (α, elimination_fill(G,α))
+    return α
 end
 
 # LEX M - Minimal Lexicographic BFS [Rose, et al, 1974]
 # Input: A general graph G = (V,E)
 # Output: A minimal elimination ordering α of G and the corresponding filled graph H.
-function lex_m(G::SimpleGraph)
+function lex_m(G::SimpleGraph, fill::Bool=false)
     # assign the label ∅ to all vertices
     M = MetaGraph(G)
     V = vertices(M)
@@ -243,7 +290,7 @@ function lex_m(G::SimpleGraph)
 
             if has_valid_path(M, y, z, get_prop(M,y,:label))
                 pushfirst!(labels[y], i)
-                has_edge(G,y,z) || add_edge!(F,y,z)
+                fill && has_edge(G,y,z) || add_edge!(F,y,z)
             end
         end
 
@@ -261,13 +308,14 @@ function lex_m(G::SimpleGraph)
         #println("vertex $(v): ", props(M,v))
     #end
 
-    return (α, F)
+    fill && return (α, F)
+    return α
 end
 
 # Maximum Cardinality Search - Minimal (MCS-M) [Berry, et al, 2004]
 # Input: A general graph G = (V,E)
 # Output: A minimal elimination ordering α of G and the corresponding filled graph H.
-function mcs_m(G::SimpleGraph)
+function mcs_m(G::SimpleGraph,fill::Bool=false)
     # for all vertices v in G do w(v) = 0
     M = MetaGraph(G)
     V = vertices(G)
@@ -311,7 +359,7 @@ function mcs_m(G::SimpleGraph)
 
             if has_valid_path(M, y, z, yw)
                 incs[y] += 1
-                if !has_edge(M,y,z)
+                if fill && !has_edge(M,y,z)
                     add_edge!(F,y,z)
                 end
             end
@@ -327,18 +375,18 @@ function mcs_m(G::SimpleGraph)
         pushfirst!(α,z)
     end
 
-    return (α, F)
+    fill && return (α, F)
+    return α
 end
 
 function is_chordal(G::SimpleGraph, alg::Symbol=:mcsm)
     local α, F
     if alg === :mcs
-        α = mcs(G)
-        F = elimination_fill(G, α)
+        (α, F) = mcs(G, true)
     elseif alg === :mcsm
-        (α, F) = mcs_m(G)
+        (α, F) = mcs_m(G, true)
     elseif alg === :lexm
-        (α, F) = lex_m(G)
+        (α, F) = lex_m(G, true)
     end
 
     return ne(F) === 0
